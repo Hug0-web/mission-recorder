@@ -1,18 +1,95 @@
 const express = require("express");
 const cors = require("cors");
+const dotenv = require("dotenv");
+const multer = require("multer");
+const OpenAI = require("openai");
 
 const app = express();
 const port = 3001;
 
-// Autoriser ton front React
+dotenv.config();
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 },
+});
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || "http://localhost:3000")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 app.use(
   cors({
-    origin: "http://localhost:3000",
+    origin: (origin, callback) => {
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (
+        allowedOrigins.includes(origin) ||
+        allowedOrigins.some((allowed) => allowed === "*")
+      ) {
+        return callback(null, true);
+      }
+
+      if (origin === "http://127.0.0.1:3000" && allowedOrigins.includes("http://localhost:3000")) {
+        return callback(null, true);
+      }
+
+      callback(new Error(`Origin ${origin} non autorisé par CORS`));
+    },
+    credentials: true,
   })
 );
 
 // Pour lire le JSON envoyé par le front
 app.use(express.json());
+
+app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
+  if (!process.env.OPENAI_API_KEY) {
+    return res
+      .status(500)
+      .json({ error: "OPENAI_API_KEY manquant côté serveur." });
+  }
+
+  if (!req.file) {
+    return res.status(400).json({ error: "Aucun fichier audio reçu." });
+  }
+
+  try {
+    const fileName = req.file.originalname || `enregistrement.${(req.file.mimetype && req.file.mimetype.split("/")[1]) || "webm"}`;
+    const fileType = req.file.mimetype || "application/octet-stream";
+
+    const file = new File([req.file.buffer], fileName, { type: fileType });
+
+    const transcription = await openai.audio.transcriptions.create({
+      file,
+      model: "gpt-4o-mini-transcribe",
+      language: "fr",
+    });
+
+    const text = transcription.text || "";
+    if (!text.trim()) {
+      return res
+        .status(422)
+        .json({ error: "Transcription vide retournée par Whisper." });
+    }
+
+    res.json({ transcription: text });
+  } catch (error) {
+    console.error("Erreur Whisper:", error);
+    const message =
+      (error?.response && error.response.data && error.response.data.error && error.response.data.error.message) ||
+      error?.message ||
+      "Transcription impossible avec Whisper.";
+    res.status(502).json({ error: message });
+  }
+});
 
 app.get("/", (req, res) => {
   res.send("API mission OK");
