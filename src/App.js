@@ -18,6 +18,8 @@ function App() {
       return null;
     }
 
+    
+
     const recognition = new SpeechRecognition();
     recognition.lang = "fr-FR";
     recognition.continuous = true;      // on continue tant qu’on ne stoppe pas
