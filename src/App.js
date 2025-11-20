@@ -1,102 +1,146 @@
-import React, { useRef, useState } from "react";
+import React, { useState, useRef } from "react";
 
 function App() {
-  const [recording, setRecording] = useState(false);
+  const [listening, setListening] = useState(false);
   const [transcription, setTranscription] = useState("");
   const [mission, setMission] = useState(null);
   const [loading, setLoading] = useState(false);
-  const mediaRecorderRef = useRef(null);
-  const chunksRef = useRef([]);
+  const recognitionRef = useRef(null);
 
-  const startRecording = async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const mediaRecorder = new MediaRecorder(stream);
-    mediaRecorderRef.current = mediaRecorder;
-    chunksRef.current = [];
+  const initRecognition = () => {
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
 
-    mediaRecorder.ondataavailable = (e) => {
-      chunksRef.current.push(e.data);
+    if (!SpeechRecognition) {
+      alert(
+        "La reconnaissance vocale n'est pas supportée sur ce navigateur. Utilise de préférence Chrome ou Edge."
+      );
+      return null;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "fr-FR";
+    recognition.continuous = true;      // on continue tant qu’on ne stoppe pas
+    recognition.interimResults = true;  // on voit les résultats au fur et à mesure
+
+    recognition.onresult = (event) => {
+      let finalText = "";
+      for (let i = 0; i < event.results.length; i++) {
+        finalText += event.results[i][0].transcript + " ";
+      }
+      setTranscription(finalText.trim());
     };
 
-    mediaRecorder.onstop = () => {
-      const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-      sendAudio(blob);
+    recognition.onerror = (event) => {
+      console.error("Erreur reconnaissance vocale:", event.error);
+      setListening(false);
     };
 
-    mediaRecorder.start();
-    setRecording(true);
+    recognition.onend = () => {
+      console.log("Reconnaissance vocale terminée");
+      setListening(false);
+    };
+
+    recognitionRef.current = recognition;
+    return recognition;
   };
 
-  const stopRecording = () => {
-    if (mediaRecorderRef.current) {
-      mediaRecorderRef.current.stop();
-      setRecording(false);
+  const startListening = () => {
+    let recognition = recognitionRef.current;
+    if (!recognition) {
+      recognition = initRecognition();
+      if (!recognition) return;
+    }
+
+    setTranscription("");
+    setMission(null);
+    recognition.start();
+    setListening(true);
+  };
+
+  const stopListening = () => {
+    const recognition = recognitionRef.current;
+    if (recognition) {
+      recognition.stop();
     }
   };
 
-  const sendAudio = async (blob) => {
+  const sendTextToBackend = async () => {
+    if (!transcription) return;
+
     setLoading(true);
-    setTranscription("");
     setMission(null);
 
-    const formData = new FormData();
-    formData.append("audio", blob, "recording.webm");
-
     try {
-      const response = await fetch(
-        `http://localhost:3001/api/transcribe`,
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
+      const response = await fetch("http://localhost:3001/api/mission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: transcription }),
+      });
+
+      const data = await response.json();
 
       if (!response.ok) {
-        console.error("Erreur HTTP:", response.status);
+        console.error("Erreur API:", data);
+        alert(data.error || "Erreur côté serveur");
         return;
       }
 
-      const data = await response.json();
-      setTranscription(data.transcription || "");
       setMission(data.mission || null);
     } catch (e) {
       console.error("Erreur fetch:", e);
+      alert("Impossible de contacter le serveur.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div style={{ maxWidth: 800, margin: "0 auto", fontFamily: "sans-serif" }}>
-      <h1>Enregistrement client → Fiche mission</h1>
+    <div style={{ maxWidth: 900, margin: "0 auto", fontFamily: "sans-serif" }}>
+      <h1>Client → Fiche mission (Web Speech API)</h1>
+
+      <p>
+        1. Clique sur <b>“Commencer à écouter”</b> et laisse le client parler. <br />
+        2. Clique sur <b>“Arrêter”</b>. <br />
+        3. Clique sur <b>“Générer la fiche mission”</b>.
+      </p>
 
       <div style={{ marginBottom: 20 }}>
-        {!recording ? (
-          <button onClick={startRecording}>🎙️ Démarrer l'enregistrement</button>
+        {!listening ? (
+          <button onClick={startListening}>🎙️ Commencer à écouter</button>
         ) : (
-          <button onClick={stopRecording}>⏹️ Arrêter</button>
+          <button onClick={stopListening}>⏹️ Arrêter</button>
         )}
       </div>
 
-      {loading && <p>Analyse en cours...</p>}
-
       <div style={{ marginBottom: 20 }}>
-        <h2>Transcription brute</h2>
+        <h2>Transcription en direct</h2>
         <div
           style={{
-            minHeight: 80,
+            minHeight: 120,
             border: "1px solid #ccc",
             padding: 10,
             borderRadius: 4,
             whiteSpace: "pre-wrap",
+            background: "#fff",
           }}
         >
-          {transcription || "En attente de transcription..."}
+          {transcription || "Parle, le texte va s'afficher ici..."}
         </div>
       </div>
 
+      <div style={{ marginBottom: 20 }}>
+        <button
+          onClick={sendTextToBackend}
+          disabled={!transcription || loading}
+        >
+          ➡️ Générer la fiche mission à partir du texte
+        </button>
+        {loading && <span style={{ marginLeft: 10 }}>Analyse en cours…</span>}
+      </div>
+
       <div>
-        <h2>Fiche mission (bullet points)</h2>
+        <h2>Fiche mission générée</h2>
         {mission ? (
           <div
             style={{
@@ -120,7 +164,7 @@ function App() {
             )}
           </div>
         ) : (
-          <p>La fiche mission sera générée après l'analyse de l'audio.</p>
+          <p>Aucune fiche mission encore générée.</p>
         )}
       </div>
     </div>
