@@ -1,4 +1,6 @@
 import React, { useState, useRef } from "react";
+import "./App.css";
+import DemoCard from "./components/DemoCard";
 
 function App() {
   const [listening, setListening] = useState(false);
@@ -18,12 +20,10 @@ function App() {
       return null;
     }
 
-    
-
     const recognition = new SpeechRecognition();
     recognition.lang = "fr-FR";
-    recognition.continuous = true;      // on continue tant qu’on ne stoppe pas
-    recognition.interimResults = true;  // on voit les résultats au fur et à mesure
+    recognition.continuous = true;
+    recognition.interimResults = true;
 
     recognition.onresult = (event) => {
       let finalText = "";
@@ -39,7 +39,6 @@ function App() {
     };
 
     recognition.onend = () => {
-      console.log("Reconnaissance vocale terminée");
       setListening(false);
     };
 
@@ -62,9 +61,7 @@ function App() {
 
   const stopListening = () => {
     const recognition = recognitionRef.current;
-    if (recognition) {
-      recognition.stop();
-    }
+    if (recognition) recognition.stop();
   };
 
   const sendTextToBackend = async () => {
@@ -81,9 +78,7 @@ function App() {
       });
 
       const data = await response.json();
-
       if (!response.ok) {
-        console.error("Erreur API:", data);
         alert(data.error || "Erreur côté serveur");
         return;
       }
@@ -98,77 +93,56 @@ function App() {
   };
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto", fontFamily: "sans-serif" }}>
-      <h1>Client → Fiche mission (Web Speech API)</h1>
+    <div className="app-root">
+      <header className="app-header">
+        <h1>Mission Recorder</h1>
+        <p className="tag">Transforme la parole en fiche mission — démo</p>
+      </header>
 
-      <p>
-        1. Clique sur <b>“Commencer à écouter”</b> et laisse le client parler. <br />
-        2. Clique sur <b>“Arrêter”</b>. <br />
-        3. Clique sur <b>“Générer la fiche mission”</b>.
-      </p>
-
-      <div style={{ marginBottom: 20 }}>
-        {!listening ? (
-          <button onClick={startListening}>🎙️ Commencer à écouter</button>
-        ) : (
-          <button onClick={stopListening}>⏹️ Arrêter</button>
-        )}
-      </div>
-
-      <div style={{ marginBottom: 20 }}>
-        <h2>Transcription en direct</h2>
-        <div
-          style={{
-            minHeight: 120,
-            border: "1px solid #ccc",
-            padding: 10,
-            borderRadius: 4,
-            whiteSpace: "pre-wrap",
-            background: "#fff",
-          }}
-        >
-          {transcription || "Parle, le texte va s'afficher ici..."}
-        </div>
-      </div>
-
-      <div style={{ marginBottom: 20 }}>
-        <button
-          onClick={sendTextToBackend}
-          disabled={!transcription || loading}
-        >
-          ➡️ Générer la fiche mission à partir du texte
-        </button>
-        {loading && <span style={{ marginLeft: 10 }}>Analyse en cours…</span>}
-      </div>
-
-      <div>
-        <h2>Fiche mission générée</h2>
-        {mission ? (
-          <div
-            style={{
-              border: "1px solid #ccc",
-              borderRadius: 4,
-              padding: 10,
-              background: "#fafafa",
-            }}
-          >
-            {mission.summary && (
-              <p>
-                <strong>Résumé :</strong> {mission.summary}
-              </p>
+      <main className="container">
+        <section className="controls">
+          <div className="control-row">
+            {!listening ? (
+              <button className="btn primary" onClick={startListening}>
+                🎙️ Commencer
+              </button>
+            ) : (
+              <button className="btn warn" onClick={stopListening}>
+                ⏹️ Arrêter
+              </button>
             )}
-            {mission.bullets && (
-              <ul>
-                {mission.bullets.map((b, idx) => (
-                  <li key={idx}>{b}</li>
-                ))}
-              </ul>
-            )}
+
+            <button
+              className="btn"
+              onClick={sendTextToBackend}
+              disabled={!transcription || loading}
+            >
+              ➡️ Générer la fiche
+            </button>
+            {loading && <span className="muted">Analyse en cours…</span>}
           </div>
-        ) : (
-          <p>Aucune fiche mission encore générée.</p>
-        )}
-      </div>
+
+          <div className="transcript">
+            <h3>Transcription en direct</h3>
+            <div className="transcript-box">
+              {transcription || "Parle maintenant — le texte s'affichera ici..."}
+            </div>
+          </div>
+        </section>
+
+        <aside className="result">
+          <h3>Fiche mission</h3>
+          {mission ? (
+            <DemoCard mission={mission} />
+          ) : (
+            <div className="empty">Aucune fiche générée (encore).</div>
+          )}
+        </aside>
+      </main>
+
+      <footer className="app-footer">
+        <small>Démo — API locale attendue sur http://localhost:3001</small>
+      </footer>
     </div>
   );
 }

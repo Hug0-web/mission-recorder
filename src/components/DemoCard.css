@@ -1,0 +1,26 @@
+.demo-card{
+  background: linear-gradient(180deg, #ffffff, #fbfbfd);
+  border: 1px solid rgba(20,20,30,0.06);
+  border-radius: 10px;
+  padding: 14px;
+  box-shadow: 0 6px 18px rgba(32,40,60,0.06);
+}
+.demo-card .summary{
+  font-weight: 600;
+  color: #102a43;
+  margin-bottom: 8px;
+}
+.meta{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-bottom:10px;
+}
+.chip{
+  background:#eef6ff;
+  color:#0b3b5c;
+  padding:6px 10px;
+  border-radius:999px;
+  font-size:12px;
+}
+.bullets{ list-style: disc; margin:0; padding-left:18px; color:#0f1724 }
