@@ -35,83 +35,117 @@ app.post("/api/mission", (req, res) => {
   res.json({ mission });
 });
 
+function extractDeadline(text) {
+  const lower = text.toLowerCase();
+
+  // 1) Formats explicites: "avant juin 2025", "fin avril", "pour janvier", etc.
+  const explicitDate = lower.match(
+    /(avant|pour|fin|début|d'ici)\s+(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre|\d{4})/
+  );
+  if (explicitDate && explicitDate[0]) {
+    return explicitDate[0];
+  }
+
+  // 2) Formats relatifs: "dans 3 mois", "avant 2 semaines", "sous 6 semaines"
+  const relativeDate = lower.match(
+    /(dans|avant|sous|d'ici)\s+(\d+)\s*(jours?|semaines?|mois|ans?)/
+  );
+  if (relativeDate && relativeDate[0]) {
+    return relativeDate[0];
+  }
+
+  // 3) Formats du type "3 mois", "90 jours" *mais seulement si* on parle bien d’échéance
+  const looseRelative = lower.match(/(\d+)\s*(jours?|semaines?|mois|ans?)/);
+  if (
+    looseRelative &&
+    (lower.includes("livraison") ||
+      lower.includes("deadline") ||
+      lower.includes("rendu"))
+  ) {
+    return "avant " + looseRelative[0];
+  }
+
+  return null;
+}
+
+
 function buildMissionFromText(text) {
   const lower = text.toLowerCase();
 
-  /** ---- 1) Regex d’extraction ---- **/
+  // ---------- Extraction intelligente ----------
+  const deadline = extractDeadline(text);
 
-  // Extraction deadline → on capture tout le morceau utile
-  const deadlineMatch = lower.match(/(avant|fin|début|d'ici|pour|délai|livraison)\s*([a-zéûà]+|\d{1,2}\/\d{1,2}\/\d{2,4}|\d{4})/i);
+  const budgetMatch = lower.match(
+    /(budget|environ|près de|aux alentours de|entre)\s*([0-9\s.,]+(?:k|k€|€|euros)?)/i
+  );
 
-  // Extraction budget → différents formats possibles (euros, k€, milliers)
-  const budgetMatch = lower.match(/(?:budget|environ|à peu près|entre)\s*([0-9\s.,]+(?:k|k€|€|euros)?)/i);
 
-  // Détection du type
+
+
   const isRefonte = lower.includes("refonte") || lower.includes("refondre");
   const isBackoffice = lower.includes("backoffice") || lower.includes("back-office");
   const wantsDashboard = lower.includes("tableau de bord") || lower.includes("dashboard");
   const wantsAuth = lower.includes("auth") || lower.includes("login") || lower.includes("sécurité");
 
-
-  /** ---- 2) Construction des bullet points ---- **/
   const bullets = [];
 
   bullets.push(`Demande exprimée par le client : "${text}".`);
 
-  // Nature du projet
-  if (isRefonte && isBackoffice) {
-    bullets.push("Projet identifié : refonte d'un backoffice existant.");
-  } else if (isRefonte) {
-    bullets.push("Projet identifié : refonte d’un système existant.");
-  } else if (isBackoffice) {
-    bullets.push("Projet identifié : création ou amélioration d’un backoffice interne.");
-  } else {
-    bullets.push("Type de projet à clarifier (aucun mot-clé explicite détecté).");
-  }
+  // Type de projet
+  if (isRefonte && isBackoffice) bullets.push("Projet identifié : refonte du backoffice existant.");
+  else if (isRefonte) bullets.push("Projet identifié : refonte d’un système existant.");
+  else if (isBackoffice) bullets.push("Projet identifié : création ou amélioration d’un backoffice interne.");
+  else bullets.push("Type de projet à clarifier (aucun mot-clé explicite détecté).");
 
-  // Fonctionnalités détectées
-  if (wantsDashboard) bullets.push("Besoin détecté : ajout ou amélioration d’un tableau de bord.");
-  if (wantsAuth) bullets.push("Besoin détecté : authentification / gestion des accès.");
+  // Fonctionnalités
+  if (wantsDashboard) bullets.push("Besoin détecté : tableau de bord / reporting.");
+  if (wantsAuth) bullets.push("Besoin détecté : connexion sécurisée / gestion des accès.");
 
   // Deadline
-  if (deadlineMatch) {
-    bullets.push(
-      `Deadline mentionnée par le client : "${deadlineMatch[0]}". Une validation et un planning précis seront nécessaires.`
-    );
+  if (deadline) {
+    bullets.push(`Deadline repérée : "${deadline}". Planification à valider avec le client.`);
   } else {
-    bullets.push("Aucune deadline précise détectée. Une clarification sur les échéances sera nécessaire.");
+    bullets.push("Aucune deadline claire détectée. Une clarification est nécessaire.");
   }
 
-  // Budget
-  if (budgetMatch) {
-    bullets.push(
-      `Budget potentiel détecté : "~${budgetMatch[1].trim()}". À confirmer avec le client.`
-    );
-  } else {
-    bullets.push("Aucun budget explicite détecté. Prévoir estimation et fourchettes de coûts.");
+    // --- Budget ---
+  let budgetText = null;
+  if (budgetMatch && budgetMatch[2] && /\d/.test(budgetMatch[2])) {
+    budgetText = budgetMatch[2].trim();
   }
 
-  let summaryParts = [];
+  if (budgetText) {
+    bullets.push(`Budget détecté : "~${budgetText}". Validation requise.`);
+  } else if (lower.includes("budget")) {
+    bullets.push(
+      "Le client mentionne un budget, mais sans montant précis. À clarifier."
+    );
+  } else {
+    bullets.push(
+      "Budget non mentionné – prévoir estimation et fourchettes de coûts."
+    );
+  }
 
+  // Résumé dynamique
+  const summaryParts = [];
   if (isRefonte) summaryParts.push("refonte");
   if (isBackoffice) summaryParts.push("backoffice");
-  if (deadlineMatch) summaryParts.push(`délai cible "${deadlineMatch[0]}"`);
-  if (budgetMatch) summaryParts.push(`budget estimé "${budgetMatch[1]}"`);
-
-  const summary = summaryParts.length
-    ? `Projet détecté : ${summaryParts.join(", ")}.`
-    : `Projet exprimé mais détails encore flous.`;
+  if (deadline) summaryParts.push(`délai : ${deadline}`);
+  if (budgetMatch) summaryParts.push(`budget estimé : ${budgetMatch[2]}`);
 
   return {
-    summary,
+    summary: summaryParts.length
+      ? `Projet identifié : ${summaryParts.join(", ")}.`
+      : "Projet exprimé mais informations clés manquantes.",
     extracted: {
-      deadline: deadlineMatch ? deadlineMatch[0] : null,
-      budget: budgetMatch ? budgetMatch[1].trim() : null,
-      type: isRefonte || isBackoffice ? summaryParts.join(", ") : "non déterminé",
+      deadline,
+      budget: budgetMatch ? budgetMatch[2].trim() : null,
+      projectType: summaryParts.join(", ") || "Non déterminé"
     },
     bullets,
   };
 }
+
 
 app.listen(port, () => {
   console.log(`Serveur API mission à l'écoute sur http://localhost:${port}`);
